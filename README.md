@@ -3,6 +3,8 @@ MediaCaptureNokiaEffects
 
 The universal app (Win8.1/WP8.1) demonstrates how to use the Nokia Imaging SDK within a Media Foundation Transform to be used as an effect during MediaCapture using a camera.
 
+REQUIRES: Nokia Imaging SDK (use Nuget to add to ALL projects, both WP8/Win8 and C#/C++)
+
 There are two ways to use this:
 
 1.  You can pass custom strings that represent Filters to the IPropertySet interface that must be added to the AddEffectAsync method.
