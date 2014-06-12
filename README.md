@@ -7,21 +7,17 @@ REQUIRES: Nokia Imaging SDK (use Nuget to add to ALL projects, both WP8/Win8 and
 
 There are two ways to use this:
 
-1.  You can pass custom strings that represent Filters to the IPropertySet interface that must be added to the AddEffectAsync method.
+1.  You can pass a List<IImageProvider> using the IPropertySet interface with the key "IImageProviders".  
 
-2.  You can ignore the IPropertySet interface and manually add Filters within the C++ component.  
+2.  You can ignore the IPropertySet interface and manually add an effect pipeline within the C++ component.  
 
 
 
 
 Using IPropertySet (Method 1)
 
-1.  The first KeyValuePair to be passed to IPropertySet is "filterList" with a List<string> that contains the exact names of all of the Filters you want to use in the order you wish to use them.  
-2.  Add another KeyValuePair for each Filter you added in the first step.  This time you will use the filter name as the key and the object will be a simple string that is either empty or contains manual parameters for the Filter.  Enums MUST be entered as ints.
-
-Currently, ONLY LomoFilter is setup to operate this way (and SolarizeFilter partially).  The other filters need to be added in to the C++ component under the GetFilter function in ImagingEffect.cpp.  You can use the LomoFilter section as a template for the rest.
-
+- You can add any number of effects to the List of IImageProviders.  The first effect in the list will have it's source property associated with a BitmapImageSource containing the raw video frames being captured.  The last effect in the list will be rendered to a BitmapImage to output.  Except for the first effect, all effects in the list MUST already be connected... i.e. their source properties must have a reference to the preceeding effect. 
 
 Adding Filters manually to the C++ project (Method 2)
 
-1. Leave the current IPropertySet alone and add Filters to the ApplyImagingFilters function in much the same way you would do in a normal project.  You can remove or comment out the section that parses the filter parameters from IPropertySet.
+- Leave the current IPropertySet alone and add Filters to the ApplyImagingFilters function in much the same way you would do in a normal project.  You can remove or comment out the section that parses the filter parameters from IPropertySet.
