@@ -16,6 +16,10 @@
 #include <robuffer.h>
 #include <collection.h>
 #include <vector>
+#include <map>
+#include <sstream>		
+#include <algorithm>  //for str.remove
+
 
 #pragma comment(lib, "d2d1")
 
@@ -28,48 +32,6 @@ using namespace Platform::Collections;
 
 ActivatableClass(CImagingEffect);
 
-/*
-
-This sample implements a video effect as a Media Foundation transform (MFT).
-
-NOTES ON THE MFT IMPLEMENTATION
-
-1. The MFT has fixed streams: One input stream and one output stream.
-
-2. The MFT supports the following formats: UYVY, YUY2, NV12.
-
-3. If the MFT is holding an input sample, SetInputType and SetOutputType both fail.
-
-4. The input and output types must be identical.
-
-5. If both types are set, no type can be set until the current type is cleared.
-
-6. Preferred input types:
-
-(a) If the output type is set, that's the preferred type.
-(b) Otherwise, the preferred types are partial types, constructed from the
-list of supported subtypes.
-
-7. Preferred output types: As above.
-
-8. Streaming:
-
-The private BeingStreaming() method is called in response to the
-MFT_MESSAGE_NOTIFY_BEGIN_STREAMING message.
-
-If the client does not send MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, the MFT calls
-BeginStreaming inside the first call to ProcessInput or ProcessOutput.
-
-This is a good approach for allocating resources that your MFT requires for
-streaming.
-
-9. The configuration attributes are applied in the BeginStreaming method. If the
-client changes the attributes during streaming, the change is ignored until
-streaming is stopped (either by changing the media types or by sending the
-MFT_MESSAGE_NOTIFY_END_STREAMING message) and then restarted.
-
-*/
-
 
 // Video FOURCC codes.
 const DWORD FOURCC_YUY2 = '2YUY';
@@ -80,8 +42,7 @@ const DWORD FOURCC_NV12 = '21VN';
 const GUID g_MediaSubtypes[] =
 {
 	MFVideoFormat_NV12,
-	MFVideoFormat_YUY2,
-	MFVideoFormat_UYVY
+	MFVideoFormat_YUY2
 };
 
 DWORD GetImageSize(DWORD fcc, UINT32 width, UINT32 height);
@@ -111,77 +72,21 @@ inline T clamp(const T &val, const T &minVal, const T &maxVal)
 // dwHeightInPixels  Frame height, in pixels.
 //-------------------------------------------------------------------
 
-// Convert UYVY image.
-
-void TransformImage_UYVY(
-	const D2D_RECT_U &rcDest,
-	_Inout_updates_(_Inexpressible_(lDestStride * dwHeightInPixels)) BYTE *pDest,
-	_In_ LONG lDestStride,
-	_In_reads_(_Inexpressible_(lSrcStride * dwHeightInPixels)) const BYTE *pSrc,
-	_In_ LONG lSrcStride,
-	_In_ DWORD dwWidthInPixels,
-	_In_ DWORD dwHeightInPixels,
-	_In_reads_or_z_(NULL) const wchar_t* filterParams)
-{
-	DWORD y = 0;
-	// Round down to the even value.
-	const UINT32 left = rcDest.left & ~(1);
-	const UINT32 right = rcDest.right & ~(1);
-	const DWORD y0 = min(rcDest.bottom, dwHeightInPixels);
-
-	// Lines above the destination rectangle.
-	for (; y < rcDest.top; y++)
-	{
-		CopyMemory(pDest, pSrc, dwWidthInPixels * 2);
-		pSrc += lSrcStride;
-		pDest += lDestStride;
-	}
-
-	// Lines within the destination rectangle.
-	for (; y < y0; y++)
-	{
-		const WORD *pSrc_Pixel = reinterpret_cast<const WORD*>(pSrc);
-		WORD *pDest_Pixel = reinterpret_cast<WORD*>(pDest);
-
-		CopyMemory(pDest, pSrc, left * 2);
-		for (DWORD x = left; (x + 1) < right; x += 2)
-		{
-			// Byte order is Y0 U0 Y1 V0
-			// Each WORD is a byte pair (Y, U/V)
-			// Windows is little-endian so the order appears reversed.
-
-			DWORD tmp = *reinterpret_cast<const DWORD*>(&pSrc_Pixel[x]);
-			*reinterpret_cast<DWORD*>(&pDest_Pixel[x]) = (tmp & 0xFF00FF00) | 0x00800080;
-		}
-		CopyMemory(pDest + (right * 2), pSrc + (right * 2), (dwWidthInPixels - right) * 2);
-
-		pDest += lDestStride;
-		pSrc += lSrcStride;
-	}
-
-	// Lines below the destination rectangle.
-	for (; y < dwHeightInPixels; y++)
-	{
-		CopyMemory(pDest, pSrc, dwWidthInPixels * 2);
-		pSrc += lSrcStride;
-		pDest += lDestStride;
-	}
-}
 
 Nokia::Graphics::Imaging::Bitmap^ AsBitmapYUY2(const unsigned char* source, unsigned int width, unsigned int height)
 {
 	int totalDimensionLength = width * height;
-				
+
 	int size = totalDimensionLength * 4; //YUY2 buffer will be returned from the camera.
 
 	ComPtr<ImagingEffects::NativeBuffer> nativeBuffer;
 	MakeAndInitialize<ImagingEffects::NativeBuffer>(&nativeBuffer, (byte *)source, size);
 	auto iinspectable = (IInspectable *)reinterpret_cast<IInspectable *>(nativeBuffer.Get());
 	IBuffer ^buffer = reinterpret_cast<IBuffer ^>(iinspectable);
-		
+
 	nativeBuffer = nullptr;
 
-	return ref new Bitmap(Windows::Foundation::Size((float)width, (float)height), ColorMode::Yuv422_Y1UY2V, 2*width, buffer);
+	return ref new Bitmap(Windows::Foundation::Size((float)width, (float)height), ColorMode::Yuv422_Y1UY2V, 2 * width, buffer);
 }
 
 
@@ -290,110 +195,6 @@ unsigned char* FromIBuffer(Windows::Storage::Streams::IBuffer^ outputBuffer)
 	return pixels;
 }
 
-//IPropertySet ^properties;
-//IVector<String^>^ filterList;
-//IVector<IFilter^>^ Filters;
-//IPropertySet^ properties;
-
-IFilter^ GetFilter(wchar_t* filterParamters)
-{
-	IFilter^ filter;
-	wchar_t* token = NULL;
-	wchar_t *next_token = NULL;
-
-	token = wcstok_s(filterParamters, L",", &next_token);
-	std::wstring s = std::wstring(token);
-	std::vector<wchar_t*> v;
-	if (s == L"LomoFilter")
-	{
-		token = wcstok_s(NULL, L",", &next_token);
-		while (token != NULL)
-		{
-			v.push_back(token);
-			token = wcstok_s(NULL, L",", &next_token);
-		}
-		switch (v.size())
-		{
-		case 0:
-			filter = ref new LomoFilter();
-			break;
-		case 4:
-			filter = ref new LomoFilter(wcstod(v[0], NULL), wcstod(v[1], NULL), (LomoVignetting)_wtoi(v[2]), (LomoStyle)_wtoi(v[3]));
-		}
-	}
-	else if (s == L"SolarizeFilter")
-	{
-		filter = ref new SolarizeFilter();
-	}
-	
-	return filter;
-}
-
-//IFilter^ GetFilter(IVector<String^>^ filterParamters)
-//{
-//	IFilter^ filter;
-//	auto method = filterParamters->GetAt(0);
-//
-//	if (method == L"LomoFilter")
-//	{
-//		filter = ref new LomoFilter();
-//	}
-//	else if (method == L"SolarizeFilter")
-//	{
-//		filter = ref new SolarizeFilter();
-//	}
-//
-//	return filter;
-//}
-
-void ApplyImagingFilters(Bitmap^ sourceBitmap, BYTE* pDest, int totalBytes, const wchar_t* filterParams, ColorMode colorMode)
-{
-
-	Nokia::Graphics::Imaging::BitmapImageSource^ bis = ref new BitmapImageSource(sourceBitmap);
-	FilterEffect^ filterEffect = ref new FilterEffect(bis);
-	
-	IVector<IFilter^>^ Filters	= ref new Platform::Collections::Vector<IFilter^>();
-	
-	
-	wchar_t* token = NULL;
-	wchar_t *next_token = NULL;
-	std::wstring s = std::wstring(filterParams);
-	
-	//memcpy(temp, s.data(), wcslen(filterParams));
-	token = wcstok_s(&s[0], L";", &next_token);
-	while (token != NULL)
-	{
-		auto filter = GetFilter(token);
-		Filters->Append(filter);
-		token = wcstok_s(NULL, L";", &next_token);
-	}
-
-	////MonoColorFilter^ monoColorFilter = ref new MonoColorFilter(Windows::UI::Colors::Red, 0.2);
-	////BlurFilter^ blurFilter = ref new BlurFilter();
-	//LomoFilter^ lomoFilter = ref new LomoFilter();
-	////	CartoonFilter^ cartoonFilter = ref new CartoonFilter();
-	////	MagicPenFilter^ magicPenFilter = ref new MagicPenFilter();
-	////Filters->Append(blurFilter);
-	////Filters->Append(monoColorFilter);
-	//Filters->Append(lomoFilter);
-	////	Filters->Append(cartoonFilter);
-	////	Filters->Append(magicPenFilter);
-	
-	filterEffect->Filters = Filters;
-	//auto count = Filters->Size;
-	auto renderer = ref new Nokia::Graphics::Imaging::BitmapRenderer(filterEffect, colorMode);
-
-	auto renderOp = renderer->RenderAsync();
-	auto renderTask = create_task(renderOp);
-
-	renderTask.then([pDest, totalBytes](Nokia::Graphics::Imaging::Bitmap^ bitmap)
-	{
-		auto count = bitmap->Buffers->Length;
-		auto data = FromIBuffer(bitmap->Buffers[0]->Buffer);
-		//auto data = GetPointerToPixelData(bitmap->Buffers[0]->Buffer);
-		CopyMemory(pDest, data, totalBytes);
-	}).wait();
-}
 
 // Convert YUY2 image.
 
@@ -405,7 +206,7 @@ void TransformImage_YUY2(
 	_In_ LONG lSrcStride,
 	_In_ DWORD dwWidthInPixels,
 	_In_ DWORD dwHeightInPixels,
-	_In_reads_or_z_(NULL) const wchar_t* filterParams)
+	IVector<IImageProvider^>^ providers)
 {
 
 	auto size = Windows::Foundation::Size(dwWidthInPixels, dwHeightInPixels);
@@ -413,36 +214,23 @@ void TransformImage_YUY2(
 
 	Nokia::Graphics::Imaging::Bitmap^ m_BitmapToProcess = AsBitmapYUY2(pSrc, (unsigned int)size.Width, (unsigned int)size.Height);
 
-	ApplyImagingFilters(m_BitmapToProcess, pDest, totalbytes, filterParams, ColorMode::Yuv422_Y1UY2V);
+	BitmapImageSource^ source = ref new BitmapImageSource(m_BitmapToProcess);
+	auto first = providers->GetAt(0);
+	((IImageConsumer^)first)->Source = source;
 
-	//Nokia::Graphics::Imaging::BitmapImageSource^ bis = ref new BitmapImageSource(m_BitmapToProcess);
-	//FilterEffect^ filterEffect = ref new FilterEffect(bis);
-	//IVector<IFilter^>^ Filters = ref new Platform::Collections::Vector<IFilter^>();
-	////MonoColorFilter^ monoColorFilter = ref new MonoColorFilter(Windows::UI::Colors::Red, 0.2);
-	////BlurFilter^ blurFilter = ref new BlurFilter();
-	//LomoFilter^ lomoFilter = ref new LomoFilter();
-	////	CartoonFilter^ cartoonFilter = ref new CartoonFilter();
-	////	MagicPenFilter^ magicPenFilter = ref new MagicPenFilter();
-	////Filters->Append(blurFilter);
-	////Filters->Append(monoColorFilter);
-	//Filters->Append(lomoFilter);
-	////	Filters->Append(cartoonFilter);
-	////	Filters->Append(magicPenFilter);
-	//filterEffect->Filters = Filters;
-	////auto count = Filters->Size;
-	//auto renderer = ref new Nokia::Graphics::Imaging::BitmapRenderer(filterEffect, ColorMode::Yuv422_Y1UY2V);
+	auto last = providers->GetAt(providers->Size - 1);
 
-	//auto renderOp = renderer->RenderAsync();
-	//auto renderTask = create_task(renderOp);
+	BitmapRenderer^ renderer = ref new BitmapRenderer(last, ColorMode::Yuv422_Y1UY2V);
 
-	//renderTask.then([pDest, size, totalbytes](Nokia::Graphics::Imaging::Bitmap^ bitmap)
-	//{
-	//	auto count = bitmap->Buffers->Length;
-	//	auto data = FromIBuffer(bitmap->Buffers[0]->Buffer);
-	//	//auto data = GetPointerToPixelData(bitmap->Buffers[0]->Buffer);
-	//	CopyMemory(pDest, data, totalbytes);
-	//}).wait();
+	auto renderOp = renderer->RenderAsync();
+	auto renderTask = create_task(renderOp);
 
+	renderTask.then([pDest, totalbytes](Nokia::Graphics::Imaging::Bitmap^ bitmap)
+	{
+		auto count = bitmap->Buffers->Length;
+		auto data = FromIBuffer(bitmap->Buffers[0]->Buffer);
+		CopyMemory(pDest, data, totalbytes);
+	}).wait();
 }
 
 // Convert NV12 image
@@ -455,40 +243,30 @@ void TransformImage_NV12(
 	_In_ LONG lSrcStride,
 	_In_ DWORD dwWidthInPixels,
 	_In_ DWORD dwHeightInPixels,
-	_In_reads_or_z_(NULL) const wchar_t* filterParams)
+	IVector<IImageProvider^>^ providers)
 {
 	auto size = Windows::Foundation::Size(dwWidthInPixels, dwHeightInPixels);
 	auto totalbytes = (int)dwHeightInPixels * (int)dwWidthInPixels * 3 / 2;
 
 	Nokia::Graphics::Imaging::Bitmap^ m_BitmapToProcess = AsBitmapNV12(pSrc, (unsigned int)size.Width, (unsigned int)size.Height);
-	
-	ApplyImagingFilters(m_BitmapToProcess, pDest, totalbytes, filterParams, ColorMode::Yuv420Sp);
 
-	//Nokia::Graphics::Imaging::BitmapImageSource^ bis = ref new BitmapImageSource(m_BitmapToProcess);
-	//FilterEffect^ filterEffect = ref new FilterEffect(bis);
-	//IVector<IFilter^>^ Filters = ref new Platform::Collections::Vector<IFilter^>();
-	////MonoColorFilter^ monoColorFilter = ref new MonoColorFilter(Windows::UI::Colors::Red, 0.2);
-	////BlurFilter^ blurFilter = ref new BlurFilter();
-	////LomoFilter^ lomoFilter = ref new LomoFilter();
-	//CartoonFilter^ cartoonFilter = ref new CartoonFilter();
-	////Filters->Append(blurFilter);
-	////Filters->Append(monoColorFilter);
-	////Filters->Append(lomoFilter);
-	//Filters->Append(cartoonFilter);
-	//filterEffect->Filters = Filters;
-	////auto count = Filters->Size;
-	//auto renderer = ref new Nokia::Graphics::Imaging::BitmapRenderer(filterEffect, ColorMode::Yuv420Sp);
+	BitmapImageSource^ source = ref new BitmapImageSource(m_BitmapToProcess);
+	auto first = providers->GetAt(0);
+	((IImageConsumer^)first)->Source = source;
 
-	//auto renderOp = renderer->RenderAsync();
-	//auto renderTask = create_task(renderOp);
+	auto last = providers->GetAt(providers->Size - 1);
 
-	//renderTask.then([pDest, size, totalbytes](Nokia::Graphics::Imaging::Bitmap^ bitmap)
-	//{
-	//	auto count = bitmap->Buffers->Length;
-	//	auto data = FromIBuffer(bitmap->Buffers[0]->Buffer);
-	//	CopyMemory(pDest, data, totalbytes);
-	//}).wait();
+	BitmapRenderer^ renderer = ref new BitmapRenderer(last, ColorMode::Yuv420Sp);
 
+	auto renderOp = renderer->RenderAsync();
+	auto renderTask = create_task(renderOp);
+
+	renderTask.then([pDest, totalbytes](Nokia::Graphics::Imaging::Bitmap^ bitmap)
+	{
+		auto count = bitmap->Buffers->Length;
+		auto data = FromIBuffer(bitmap->Buffers[0]->Buffer);
+		CopyMemory(pDest, data, totalbytes);
+	}).wait();
 }
 
 CImagingEffect::CImagingEffect()
@@ -525,31 +303,7 @@ HRESULT CImagingEffect::SetProperties(ABI::Windows::Foundation::Collections::IPr
 	try
 	{
 		IPropertySet^ properties = reinterpret_cast<IPropertySet^>(pConfiguration);
-		IVector<String^>^ filterList = safe_cast<IVector<String^>^>(properties->Lookup(L"filterList"));
-		auto size = filterList->Size;
-		wchar_t temp[100] = { 0 };
-		for (int i = 0; i < size; i++)
-		{
-			auto commandKey = filterList->GetAt(i);
-			auto commandArray = safe_cast<String^>(properties->Lookup(commandKey));
-			wchar_t* tempWide = const_cast< wchar_t* >(commandArray->Data());
-			wcscat_s(temp, commandKey->Data());
-			wcscat_s(temp, L",");
-			wcscat_s(temp, tempWide);
-			//temp = commandKey + L"," + commandArray;
-			//auto filter = GetFilter(commandArray);
-			//Filters->Append(filter);
-		}
-		m_filterParams = temp;
-		m_altFilterParams = std::wstring(temp);
-		//m_filterParams = L"LomoFilter,0.5,0.5,2,3";
-		/*
-		auto size = effectList->Size;
-		for (int i = 0; i < size; i++)
-		{
-			OutputDebugString(effectList->GetAt(i)->Data());
-		}*/
-		//configuration->Insert(L"test", static_cast<IInspectable*>(this));
+		m_imageProviders = safe_cast<IVector<IImageProvider^>^>(properties->Lookup(L"IImageProviders"));
 	}
 	catch (Exception ^exc)
 	{
@@ -1623,8 +1377,7 @@ void CImagingEffect::OnProcessOutput(IMFMediaBuffer *pIn, IMFMediaBuffer *pOut)
 	assert(m_pTransformFn != nullptr);
 	if (m_pTransformFn)
 	{
-		auto s = m_altFilterParams;
-		(*m_pTransformFn)(m_rcDest, outputLock.GetTopRow(), outputLock.GetStride(), inputLock.GetTopRow(), inputLock.GetStride(), m_imageWidthInPixels, m_imageHeightInPixels, m_altFilterParams.data());
+		(*m_pTransformFn)(m_rcDest, outputLock.GetTopRow(), outputLock.GetStride(), inputLock.GetTopRow(), inputLock.GetStride(), m_imageWidthInPixels, m_imageHeightInPixels, m_imageProviders);
 	}
 	else
 	{
@@ -1666,10 +1419,10 @@ void CImagingEffect::UpdateFormatInfo()
 		{
 			m_pTransformFn = TransformImage_YUY2;
 		}
-		else if (subtype == MFVideoFormat_UYVY)
+		/*else if (subtype == MFVideoFormat_UYVY)
 		{
-			m_pTransformFn = TransformImage_UYVY;
-		}
+		m_pTransformFn = TransformImage_UYVY;
+		}*/
 		else if (subtype == MFVideoFormat_NV12)
 		{
 			m_pTransformFn = TransformImage_NV12;

@@ -11,8 +11,17 @@ typedef void(*IMAGE_TRANSFORM_FN)(
 	LONG                    lSrcStride,      // Source stride.
 	DWORD                   dwWidthInPixels, // Image width in pixels.
 	DWORD                   dwHeightInPixels, // Image height in pixels.
-	const wchar_t*			filterParams
+	Windows::Foundation::Collections::IVector<Nokia::Graphics::Imaging::IImageProvider^>^ providers
 	);
+
+namespace ImagingEffects // Change the namespace to a project name.
+{
+	public ref class Dummy sealed
+	{
+	public:
+		property int DummyProp {int get() { return 0; }}
+	};
+}
 
 
 // CImagingEffect class:
@@ -208,6 +217,5 @@ private:
 	// Image transform function. (Changes based on the media type.)
 	IMAGE_TRANSFORM_FN  m_pTransformFn;
 
-	const wchar_t* m_filterParams;
-	std::wstring m_altFilterParams;
+	Windows::Foundation::Collections::IVector<Nokia::Graphics::Imaging::IImageProvider^>^ m_imageProviders;
 };

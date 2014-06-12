@@ -102,10 +102,16 @@ namespace MediaCaptureEffects
             await app.MediaCapture.VideoDeviceController.SetMediaStreamPropertiesAsync(MediaStreamType.VideoRecord, selectedRecordingProperties);
 
             PropertySet testSet = new PropertySet();
-            //int test = (int)LomoVignetting.High;
-            testSet.Add("filterList", new List<string>() { "LomoFilter"});
-            //testSet.Add("SolarizeFilter", new List<string>() { "" });
-            testSet.Add("LomoFilter", String.Format("0.3,0.3,{0},{1}", (int)LomoVignetting.High, (int)LomoStyle.Green));
+            
+            FilterEffect effect = new FilterEffect();
+            LomoFilter lomoFilter = new LomoFilter();
+            VignettingFilter vignettingFilter = new VignettingFilter();
+            effect.Filters = new IFilter[] { lomoFilter, vignettingFilter };
+
+            List<IImageProvider> providers = new List<IImageProvider>();
+            providers.Add(effect);
+
+            testSet.Add(new KeyValuePair<string, object>("IImageProviders", providers));
 
             await app.MediaCapture.AddEffectAsync(MediaStreamType.VideoPreview, "ImagingEffects.ImagingEffect", testSet);
             //app.MediaCapture.SetPreviewRotation(VideoRotation.Clockwise90Degrees);  //need this if portrait mode or landscapeflipped.
