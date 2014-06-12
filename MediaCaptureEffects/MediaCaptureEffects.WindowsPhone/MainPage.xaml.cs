@@ -112,12 +112,15 @@ namespace MediaCaptureEffects
             PropertySet testSet = new PropertySet();
 
             FilterEffect effect = new FilterEffect();
-            LomoFilter lomoFilter = new LomoFilter();
-            VignettingFilter vignettingFilter = new VignettingFilter();
-            effect.Filters = new IFilter[] { lomoFilter, vignettingFilter };
+            //LomoFilter lomoFilter = new LomoFilter();
+            //VignettingFilter vignettingFilter = new VignettingFilter();
+            //effect.Filters = new IFilter[] { lomoFilter, vignettingFilter };
+
+            HdrEffect hdrEffect = new HdrEffect(effect);
 
             List<IImageProvider> providers = new List<IImageProvider>();
             providers.Add(effect);
+            providers.Add(hdrEffect);
 
             testSet.Add(new KeyValuePair<string, object>("IImageProviders", providers));
 

@@ -208,7 +208,6 @@ void TransformImage_YUY2(
 	_In_ DWORD dwHeightInPixels,
 	IVector<IImageProvider^>^ providers)
 {
-
 	auto size = Windows::Foundation::Size(dwWidthInPixels, dwHeightInPixels);
 	auto totalbytes = (int)dwHeightInPixels * (int)dwWidthInPixels * 2;  //each macropixel of 4 bytes creates 2 pixels (YUYV)
 
@@ -220,17 +219,12 @@ void TransformImage_YUY2(
 
 	auto last = providers->GetAt(providers->Size - 1);
 
-	BitmapRenderer^ renderer = ref new BitmapRenderer(last, ColorMode::Yuv422_Y1UY2V);
+	BitmapRenderer^ renderer = ref new BitmapRenderer(last, AsBitmapYUY2(pDest, (unsigned int)size.Width, (unsigned int)size.Height));
 
 	auto renderOp = renderer->RenderAsync();
 	auto renderTask = create_task(renderOp);
 
-	renderTask.then([pDest, totalbytes](Nokia::Graphics::Imaging::Bitmap^ bitmap)
-	{
-		auto count = bitmap->Buffers->Length;
-		auto data = FromIBuffer(bitmap->Buffers[0]->Buffer);
-		CopyMemory(pDest, data, totalbytes);
-	}).wait();
+	renderTask.wait();
 }
 
 // Convert NV12 image
@@ -256,17 +250,13 @@ void TransformImage_NV12(
 
 	auto last = providers->GetAt(providers->Size - 1);
 
-	BitmapRenderer^ renderer = ref new BitmapRenderer(last, ColorMode::Yuv420Sp);
+	//BitmapRenderer^ renderer = ref new BitmapRenderer(last, ColorMode::Yuv420Sp);
+	BitmapRenderer^ renderer = ref new BitmapRenderer(last, AsBitmapNV12(pDest, (unsigned int)size.Width, (unsigned int)size.Height));
 
 	auto renderOp = renderer->RenderAsync();
 	auto renderTask = create_task(renderOp);
 
-	renderTask.then([pDest, totalbytes](Nokia::Graphics::Imaging::Bitmap^ bitmap)
-	{
-		auto count = bitmap->Buffers->Length;
-		auto data = FromIBuffer(bitmap->Buffers[0]->Buffer);
-		CopyMemory(pDest, data, totalbytes);
-	}).wait();
+	renderTask.wait();
 }
 
 CImagingEffect::CImagingEffect()
