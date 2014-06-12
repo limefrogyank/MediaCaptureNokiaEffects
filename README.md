@@ -16,7 +16,7 @@ There are two ways to use this:
 
 Using IPropertySet (Method 1)
 
-- You can add any number of effects to the List of IImageProviders.  The first effect in the list will have it's source property associated with a BitmapImageSource containing the raw video frames being captured.  The last effect in the list will be rendered to a BitmapImage to output.  Except for the first effect, all effects in the list MUST already be connected... i.e. their source properties must have a reference to the preceeding effect. 
+- You can add any number of effects to the List of IImageProviders.  The first effect in the list will have its source property associated with a BitmapImageSource containing the raw video frames being captured.  The last effect in the list will be rendered to a BitmapImage to output.  Except for the first effect, all effects in the list MUST already be connected... i.e. their source properties must have a reference to the preceeding effect. 
 
 Adding Filters manually to the C++ project (Method 2)
 
